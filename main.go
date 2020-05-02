@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/dgraph-io/badger/v2"
 	"log"
+	"math/rand"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -16,8 +17,16 @@ const (
 	torBulkIPs = "https://check.torproject.org/torbulkexitlist"
 )
 
+var db *badger.DB
 
 func main()  {
+
+	var err error
+	db, err = badger.Open(badger.DefaultOptions("/tmp/badger"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
 
 	go updateNodes()
 
@@ -40,8 +49,15 @@ func nginxHandler(w http.ResponseWriter, r *http.Request)  {
 	}
 }
 
+// updateNodes run update process after first run
+// and starts ticker to rescan urls every 5 minutes
 func updateNodes() {
-	err := update(torExitNodes)
+
+	sources := []string{torExitNodes, torBulkIPs}
+
+	toUpdate := sources[rand.Intn(len(sources))]
+
+	err := update(toUpdate)
 	if err != nil {
 		log.Println(err)
 	}
@@ -50,7 +66,7 @@ func updateNodes() {
 	for {
 		select {
 		case <- tick:
-			err := update(torBulkIPs)
+			err := update(toUpdate)
 			if err != nil {
 				log.Println(err)
 			}
@@ -101,12 +117,6 @@ func update(url string) (err error) {
 
 func saveToDB(nodes []string) error  {
 
-	db, err := badger.Open(badger.DefaultOptions("./badger"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-
 	for _, ip := range nodes {
 		err := db.Update(func(txn *badger.Txn) error {
 			now := time.Now().Unix()
@@ -127,12 +137,9 @@ func saveToDB(nodes []string) error  {
 	return nil
 }
 
+// getNodes extracts IP : Unix timestamp from the DB
+// return slice of IPs
 func getNodes() (nodes []string, err error) {
-	db, err := badger.Open(badger.DefaultOptions("./badger"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
 
 	err = db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
