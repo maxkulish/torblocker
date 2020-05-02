@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"github.com/dgraph-io/badger/v2"
 	"log"
@@ -19,10 +20,17 @@ const (
 
 var db *badger.DB
 
+var (
+	dir = flag.String("dir", "/tmp/badger", "Directory to save Badger DB")
+	addr = flag.String("addr", "localhost:8091", "TCP address to listen to HTTP requests")
+)
+
 func main()  {
 
+	flag.Parse()
+
 	var err error
-	db, err = badger.Open(badger.DefaultOptions("/tmp/badger"))
+	db, err = badger.Open(badger.DefaultOptions(*dir))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -31,7 +39,7 @@ func main()  {
 	go updateNodes()
 
 	http.HandleFunc("/", nginxHandler)
-	log.Fatal(http.ListenAndServe("localhost:8000", nil))
+	log.Fatal(http.ListenAndServe(*addr, nil))
 }
 
 // nginxHandler reads Tor exit nodes from local DB
@@ -41,7 +49,7 @@ func nginxHandler(w http.ResponseWriter, r *http.Request)  {
 
 	nodes, err := getNodes()
 	if err != nil {
-		fmt.Fprintf(w, "# (no minutes GET variable submitted")
+		_, _ = fmt.Fprintf(w, "# some error has happened")
 	}
 	
 	for _, ip := range nodes {
